@@ -5,8 +5,12 @@ import io
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Amazon Cannibalization Analyzer", page_icon="⚔️", layout="wide")
 
-st.title("⚔️ Amazon Search Term Cannibalization Analyzer")
-st.markdown("Created by **Prabal Lama**, Senior SEO Specialist, Bangalore.")
+# --- CUSTOM CSS ---
+st.markdown("""
+    <style>
+    .stMetric { background-color: #ffffff; border: 1px solid #f0f2f6; padding: 20px; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- HELPER FUNCTIONS ---
 def determine_winner(group, improvement_thresh, min_orders):
@@ -29,20 +33,25 @@ def determine_winner(group, improvement_thresh, min_orders):
 
 def to_excel(df):
     output = io.BytesIO()
-    # Note: engine='xlsxwriter' requires the xlsxwriter package installed
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Cannibalization_Report', index=False)
     return output.getvalue()
 
-# --- MAIN APP ---
+# --- HEADER ---
+st.title("⚔️ Amazon Search Term Cannibalization Analyzer")
+st.markdown("Designed by **Prabal Lama**, Senior SEO Specialist, Bangalore.")
+
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Settings")
     uploaded_file = st.file_uploader("Upload Search Term Report", type=["csv", "xlsx"])
-    roas_threshold = st.sidebar.slider("ROAS Improvement Threshold (%)", 30, 200, 100, 10)
-    min_orders_cannibal = st.sidebar.number_input("Min Orders for Winner", 1, 10, 2)
+    st.divider()
+    roas_threshold = st.slider("ROAS Improvement Threshold (%)", 30, 200, 100, 10)
+    min_orders_cannibal = st.number_input("Min Orders for Winner", 1, 10, 2)
 
 if uploaded_file:
     try:
+        # Load Data
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         
         # Amazon Column Mapping
@@ -57,21 +66,35 @@ if uploaded_file:
             'clicks': next((c for c in df.columns if 'Clicks' in c), None),
         }
 
-        # Data Cleaning
+        # Numeric Cleaning
         for c in ['orders', 'sales', 'spend', 'clicks']:
             df[col_map[c]] = pd.to_numeric(df[col_map[c]], errors='coerce').fillna(0)
         
-        # Aggregation
+        # --- TOTAL ACCOUNT OVERVIEW ---
+        st.subheader("📊 Total Account Overview")
+        acc_sales = df[col_map['sales']].sum()
+        acc_spend = df[col_map['spend']].sum()
+        acc_acos = (acc_spend / acc_sales * 100) if acc_sales > 0 else 0
+        acc_roas = (acc_sales / acc_spend) if acc_spend > 0 else 0
+        
+        o1, o2, o3, o4 = st.columns(4)
+        o1.metric("Total Sales", f"₹{acc_sales:,.2f}")
+        o2.metric("Total Spend", f"₹{acc_spend:,.2f}")
+        o3.metric("Account ACOS", f"{acc_acos:.2f}%")
+        o4.metric("Account ROAS", f"{acc_roas:.2f}")
+
+        # --- ANALYSIS LOGIC ---
         df_agg = df.groupby([col_map['term'], col_map['camp'], col_map['adg'], col_map['match']], as_index=False).agg({
             col_map['spend']: 'sum', col_map['sales']: 'sum', col_map['orders']: 'sum', col_map['clicks']: 'sum'
         })
-        df_agg.rename(columns={col_map['term']: 'Search Term', col_map['camp']: 'Campaign', col_map['adg']: 'Ad Group', col_map['orders']: 'Orders', col_map['sales']: 'Sales', col_map['spend']: 'Spend', col_map['clicks']: 'Clicks', col_map['match']: 'Match Type'}, inplace=True)
-        
+        df_agg.rename(columns={
+            col_map['term']: 'Search Term', col_map['camp']: 'Campaign', 
+            col_map['adg']: 'Ad Group', col_map['orders']: 'Orders', 
+            col_map['sales']: 'Sales', col_map['spend']: 'Spend', 
+            col_map['clicks']: 'Clicks', col_map['match']: 'Match Type'
+        }, inplace=True)
         df_agg['ROAS'] = (df_agg['Sales'] / df_agg['Spend'].replace(0, 0.01)).round(2)
-        df_agg['ACOS'] = (df_agg['Spend'] / df_agg['Sales'].replace(0, 0.01) * 100).round(2)
-        df_agg['CPC'] = (df_agg['Spend'] / df_agg['Clicks'].replace(0, 1)).round(2)
 
-        # Logic
         sales_df = df_agg[df_agg['Orders'] > 0].copy()
         dupe_terms = sales_df.groupby('Search Term').size()
         cannibal_list = dupe_terms[dupe_terms > 1].index.tolist()
@@ -79,38 +102,51 @@ if uploaded_file:
         if cannibal_list:
             final_results = []
             for term in cannibal_list:
-                subset = sales_df[sales_df['Search Term'] == term].rename(columns={'Sales': 'sales_val', 'Spend': 'spend_val', 'ROAS': 'calculated_roas', 'Orders': 'orders_val'}).copy()
+                subset = sales_df[sales_df['Search Term'] == term].rename(
+                    columns={'Sales': 'sales_val', 'Spend': 'spend_val', 'ROAS': 'calculated_roas', 'Orders': 'orders_val'}
+                ).copy()
                 win_idx, reason = determine_winner(subset, roas_threshold, min_orders_cannibal)
                 for idx, row in subset.iterrows():
                     is_winner = (idx == win_idx)
                     final_results.append({
                         'Search Term': term, 'Campaign': row['Campaign'], 'Ad Group': row['Ad Group'], 'Match Type': row['Match Type'],
                         'Orders': int(row['orders_val']), 'Sales': round(row['sales_val'], 2), 'Spend': round(row['spend_val'], 2),
-                        'ROAS': round(row['calculated_roas'], 2), 'ACOS': round(row['ACOS'], 2), 'CPC': round(row['CPC'], 2),
-                        'Action': "✅ KEEP" if is_winner else "⛔ NEGATE", 'Reason': reason if is_winner else ""
+                        'ROAS': round(row['calculated_roas'], 2), 
+                        'Action': "✅ KEEP" if is_winner else "⛔ NEGATE", 'Winning Reason': reason if is_winner else ""
                     })
             df_final = pd.DataFrame(final_results)
 
-            # --- OVERVIEW KPI SECTION ---
-            st.subheader("📊 Cannibalization Overview")
-            k1, k2, k3, k4, k5 = st.columns(5)
-            k1.metric("Cannibalized Terms", len(cannibal_list))
-            k2.metric("Total Sales", f"₹{df_final['Sales'].sum():,.2f}")
-            k3.metric("Total Spend", f"₹{df_final['Spend'].sum():,.2f}")
+            st.divider()
             
-            total_sales = df_final['Sales'].sum()
-            total_spend = df_final['Spend'].sum()
+            # --- VISUALIZATION SECTION ---
+            st.subheader("📈 Account vs. Cannibalized Sales & Spend")
             
-            total_acos = (total_spend / total_sales * 100) if total_sales > 0 else 0
-            k4.metric("Total ACOS", f"{total_acos:.2f}%")
+            comp_sales = df_final['Sales'].sum()
+            comp_spend = df_final['Spend'].sum()
             
-            total_roas = (total_sales / total_spend) if total_spend > 0 else 0
-            k5.metric("Total ROAS", f"{total_roas:.2f}")
+            chart_data = pd.DataFrame({
+                'Metric': ['Sales', 'Sales', 'Spend', 'Spend'],
+                'Type': ['Total Account', 'Cannibalized Only', 'Total Account', 'Cannibalized Only'],
+                'Value': [acc_sales, comp_sales, acc_spend, comp_spend]
+            })
+            
+            # Pivot data for chart
+            pivot_df = chart_data.pivot(index='Metric', columns='Type', values='Value')
+            st.bar_chart(pivot_df, color=["#FF4B4B", "#232F3E"])
 
-            # Highlight Table
+            # --- IMPACT SECTION ---
+            st.subheader("🚩 Cannibalization Impact")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Competing Terms", len(cannibal_list))
+            negate_spend = df_final[df_final['Action'] == '⛔ NEGATE']['Spend'].sum()
+            c2.metric("Spend to Negate (Waste)", f"₹{negate_spend:,.2f}", delta=f"-{negate_spend:,.2f}", delta_color="inverse")
+            sales_at_risk = df_final[df_final['Action'] == '⛔ NEGATE']['Sales'].sum()
+            c3.metric("Sales Reallocated", f"₹{sales_at_risk:,.2f}")
+
+            # --- DATA TABLE ---
             st.dataframe(df_final.style.apply(lambda x: ['background-color: #ffebee' if 'NEGATE' in str(v) else '' for v in x], axis=1), use_container_width=True)
             
-            # Export
+            # --- EXPORT ---
             st.download_button("📥 Export Master Report", data=to_excel(df_final), file_name="Amazon_Cannibalization_Report.xlsx")
         else:
             st.success("No cannibalization detected.")
