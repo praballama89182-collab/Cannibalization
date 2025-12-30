@@ -9,14 +9,6 @@ st.title("⚔️ Amazon Search Term Cannibalization Analyzer")
 st.markdown("Created by **Prabal Lama**, Senior SEO Specialist, Bangalore.")
 
 # --- HELPER FUNCTIONS ---
-def normalize_match_type(val):
-    if pd.isna(val): return 'UNKNOWN'
-    val = str(val).upper()
-    if 'EXACT' in val: return 'EXACT'
-    if 'PHRASE' in val: return 'PHRASE'
-    if 'BROAD' in val: return 'BROAD'
-    return 'AUTO/OTHER'
-
 def determine_winner(group, improvement_thresh, min_orders):
     max_sales_idx = group['sales_val'].idxmax()
     sales_leader = group.loc[max_sales_idx]
@@ -37,7 +29,7 @@ def determine_winner(group, improvement_thresh, min_orders):
 
 def to_excel(df):
     output = io.BytesIO()
-    # Ensure xlsxwriter is installed in your environment
+    # Note: engine='xlsxwriter' requires the xlsxwriter package installed
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Cannibalization_Report', index=False)
     return output.getvalue()
@@ -46,8 +38,8 @@ def to_excel(df):
 with st.sidebar:
     st.header("⚙️ Settings")
     uploaded_file = st.file_uploader("Upload Search Term Report", type=["csv", "xlsx"])
-    roas_threshold = st.slider("ROAS Improvement Threshold (%)", 30, 200, 100, 10)
-    min_orders_cannibal = st.number_input("Min Orders for Winner", 1, 10, 2)
+    roas_threshold = st.sidebar.slider("ROAS Improvement Threshold (%)", 30, 200, 100, 10)
+    min_orders_cannibal = st.sidebar.number_input("Min Orders for Winner", 1, 10, 2)
 
 if uploaded_file:
     try:
@@ -74,6 +66,7 @@ if uploaded_file:
             col_map['spend']: 'sum', col_map['sales']: 'sum', col_map['orders']: 'sum', col_map['clicks']: 'sum'
         })
         df_agg.rename(columns={col_map['term']: 'Search Term', col_map['camp']: 'Campaign', col_map['adg']: 'Ad Group', col_map['orders']: 'Orders', col_map['sales']: 'Sales', col_map['spend']: 'Spend', col_map['clicks']: 'Clicks', col_map['match']: 'Match Type'}, inplace=True)
+        
         df_agg['ROAS'] = (df_agg['Sales'] / df_agg['Spend'].replace(0, 0.01)).round(2)
         df_agg['ACOS'] = (df_agg['Spend'] / df_agg['Sales'].replace(0, 0.01) * 100).round(2)
         df_agg['CPC'] = (df_agg['Spend'] / df_agg['Clicks'].replace(0, 1)).round(2)
@@ -104,13 +97,20 @@ if uploaded_file:
             k1.metric("Cannibalized Terms", len(cannibal_list))
             k2.metric("Total Sales", f"₹{df_final['Sales'].sum():,.2f}")
             k3.metric("Total Spend", f"₹{df_final['Spend'].sum():,.2f}")
-            total_acos = (df_final['Spend'].sum() / df_final['Sales'].sum() * 100) if df_final['Sales'].sum() > 0 else 0
+            
+            total_sales = df_final['Sales'].sum()
+            total_spend = df_final['Spend'].sum()
+            
+            total_acos = (total_spend / total_sales * 100) if total_sales > 0 else 0
             k4.metric("Total ACOS", f"{total_acos:.2f}%")
-            total_roas = (df_final['Sales'].sum() / df_final['Spend'].sum()) if df_final['Spend'].sum() > 0 else 0
+            
+            total_roas = (total_sales / total_spend) if total_spend > 0 else 0
             k5.metric("Total ROAS", f"{total_roas:.2f}")
 
+            # Highlight Table
             st.dataframe(df_final.style.apply(lambda x: ['background-color: #ffebee' if 'NEGATE' in str(v) else '' for v in x], axis=1), use_container_width=True)
             
+            # Export
             st.download_button("📥 Export Master Report", data=to_excel(df_final), file_name="Amazon_Cannibalization_Report.xlsx")
         else:
             st.success("No cannibalization detected.")
