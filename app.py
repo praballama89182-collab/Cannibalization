@@ -1,14 +1,16 @@
 import streamlit as st
 import pandas as pd
 import io
+import plotly.graph_objects as go
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Amazon Cannibalization Analyzer", page_icon="⚔️", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS FOR STYLING ---
 st.markdown("""
     <style>
     .stMetric { background-color: #ffffff; border: 1px solid #f0f2f6; padding: 20px; border-radius: 10px; }
+    .main { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -78,8 +80,8 @@ if uploaded_file:
         acc_roas = (acc_sales / acc_spend) if acc_spend > 0 else 0
         
         o1, o2, o3, o4 = st.columns(4)
-        o1.metric("Total Sales", f"₹{acc_sales:,.2f}")
-        o2.metric("Total Spend", f"₹{acc_spend:,.2f}")
+        o1.metric("Total Sales", f"₹{acc_sales:,.0f}")
+        o2.metric("Total Spend", f"₹{acc_spend:,.0f}")
         o3.metric("Account ACOS", f"{acc_acos:.2f}%")
         o4.metric("Account ROAS", f"{acc_roas:.2f}")
 
@@ -118,30 +120,59 @@ if uploaded_file:
 
             st.divider()
             
-            # --- VISUALIZATION SECTION ---
-            st.subheader("📈 Account vs. Cannibalized Sales & Spend")
+            # --- SIMPLIFIED VISUALIZATION SECTION (Using Plotly) ---
+            st.subheader("📈 Cannibalization Share vs. Total Account")
             
             comp_sales = df_final['Sales'].sum()
             comp_spend = df_final['Spend'].sum()
             
-            chart_data = pd.DataFrame({
-                'Metric': ['Sales', 'Sales', 'Spend', 'Spend'],
-                'Type': ['Total Account', 'Cannibalized Only', 'Total Account', 'Cannibalized Only'],
-                'Value': [acc_sales, comp_sales, acc_spend, comp_spend]
-            })
-            
-            # Pivot data for chart
-            pivot_df = chart_data.pivot(index='Metric', columns='Type', values='Value')
-            st.bar_chart(pivot_df, color=["#FF4B4B", "#232F3E"])
+            sales_perc = (comp_sales / acc_sales * 100) if acc_sales > 0 else 0
+            spend_perc = (comp_spend / acc_spend * 100) if acc_spend > 0 else 0
+
+            # Horizontal Bar Chart using Plotly for better control
+            fig = go.Figure()
+            # Total Account Bars
+            fig.add_trace(go.Bar(
+                y=['Sales Volume', 'Spend Volume'],
+                x=[acc_sales, acc_spend],
+                name='Total Account',
+                orientation='h',
+                marker_color='#232F3E' # Amazon Navy
+            ))
+            # Cannibalized Portion Bars
+            fig.add_trace(go.Bar(
+                y=['Sales Volume', 'Spend Volume'],
+                x=[comp_sales, comp_spend],
+                name='Cannibalized Portion',
+                orientation='h',
+                marker_color='#FF9900' # Amazon Orange
+            ))
+
+            fig.update_layout(
+                barmode='group',
+                height=300,
+                margin=dict(l=20, r=20, t=20, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # --- INSIGHT METRICS ---
+            m1, m2 = st.columns(2)
+            m1.markdown(f"**Cannibalization Sales Ratio:** `{sales_perc:.1f}%` of your revenue is tied to competing terms.")
+            m2.markdown(f"**Cannibalization Spend Ratio:** `{spend_perc:.1f}%` of your budget is being split across duplicate targets.")
+
+            st.divider()
 
             # --- IMPACT SECTION ---
             st.subheader("🚩 Cannibalization Impact")
             c1, c2, c3 = st.columns(3)
             c1.metric("Competing Terms", len(cannibal_list))
             negate_spend = df_final[df_final['Action'] == '⛔ NEGATE']['Spend'].sum()
-            c2.metric("Spend to Negate (Waste)", f"₹{negate_spend:,.2f}", delta=f"-{negate_spend:,.2f}", delta_color="inverse")
+            c2.metric("Spend to Negate (Wasted)", f"₹{negate_spend:,.0f}", delta=f"-{negate_spend:,.0f}", delta_color="inverse")
             sales_at_risk = df_final[df_final['Action'] == '⛔ NEGATE']['Sales'].sum()
-            c3.metric("Sales Reallocated", f"₹{sales_at_risk:,.2f}")
+            c3.metric("Sales being Reallocated", f"₹{sales_at_risk:,.0f}")
 
             # --- DATA TABLE ---
             st.dataframe(df_final.style.apply(lambda x: ['background-color: #ffebee' if 'NEGATE' in str(v) else '' for v in x], axis=1), use_container_width=True)
