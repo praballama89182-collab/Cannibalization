@@ -6,11 +6,11 @@ import plotly.graph_objects as go
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Amazon Cannibalization Analyzer", page_icon="⚔️", layout="wide")
 
-# --- CUSTOM CSS FOR STYLING ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .stMetric { background-color: #ffffff; border: 1px solid #f0f2f6; padding: 20px; border-radius: 10px; }
-    .main { background-color: #f8f9fa; }
+    h1, h2, h3 { color: #1e3d59; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -45,7 +45,7 @@ st.markdown("Designed by **Prabal Lama**, Senior SEO Specialist, Bangalore.")
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Analysis Settings")
     uploaded_file = st.file_uploader("Upload Search Term Report", type=["csv", "xlsx"])
     st.divider()
     roas_threshold = st.slider("ROAS Improvement Threshold (%)", 30, 200, 100, 10)
@@ -53,10 +53,9 @@ with st.sidebar:
 
 if uploaded_file:
     try:
-        # Load Data
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         
-        # Amazon Column Mapping
+        # Column Mapping
         col_map = {
             'term': next((c for c in df.columns if 'Search Term' in c), None),
             'camp': next((c for c in df.columns if 'Campaign Name' in c), None),
@@ -68,24 +67,14 @@ if uploaded_file:
             'clicks': next((c for c in df.columns if 'Clicks' in c), None),
         }
 
-        # Numeric Cleaning
         for c in ['orders', 'sales', 'spend', 'clicks']:
             df[col_map[c]] = pd.to_numeric(df[col_map[c]], errors='coerce').fillna(0)
         
-        # --- TOTAL ACCOUNT OVERVIEW ---
-        st.subheader("📊 Total Account Overview")
+        # Total Stats
         acc_sales = df[col_map['sales']].sum()
         acc_spend = df[col_map['spend']].sum()
-        acc_acos = (acc_spend / acc_sales * 100) if acc_sales > 0 else 0
-        acc_roas = (acc_sales / acc_spend) if acc_spend > 0 else 0
         
-        o1, o2, o3, o4 = st.columns(4)
-        o1.metric("Total Sales", f"₹{acc_sales:,.0f}")
-        o2.metric("Total Spend", f"₹{acc_spend:,.0f}")
-        o3.metric("Account ACOS", f"{acc_acos:.2f}%")
-        o4.metric("Account ROAS", f"{acc_roas:.2f}")
-
-        # --- ANALYSIS LOGIC ---
+        # Aggregation Logic
         df_agg = df.groupby([col_map['term'], col_map['camp'], col_map['adg'], col_map['match']], as_index=False).agg({
             col_map['spend']: 'sum', col_map['sales']: 'sum', col_map['orders']: 'sum', col_map['clicks']: 'sum'
         })
@@ -118,69 +107,72 @@ if uploaded_file:
                     })
             df_final = pd.DataFrame(final_results)
 
+            # --- ACCOUNT OVERVIEW ---
+            st.subheader("📊 Total Account Overview")
+            o1, o2, o3, o4 = st.columns(4)
+            o1.metric("Total Sales", f"₹{acc_sales:,.0f}")
+            o2.metric("Total Spend", f"₹{acc_spend:,.0f}")
+            o3.metric("Account ACOS", f"{(acc_spend/acc_sales*100):.1f}%" if acc_sales > 0 else "0%")
+            o4.metric("Account ROAS", f"{(acc_sales/acc_spend):.1f}" if acc_spend > 0 else "0")
+
             st.divider()
-            
-            # --- SIMPLIFIED VISUALIZATION SECTION (Using Plotly) ---
+
+            # --- COLORED CHART SECTION ---
             st.subheader("📈 Cannibalization Share vs. Total Account")
             
             comp_sales = df_final['Sales'].sum()
             comp_spend = df_final['Spend'].sum()
             
-            sales_perc = (comp_sales / acc_sales * 100) if acc_sales > 0 else 0
-            spend_perc = (comp_spend / acc_spend * 100) if acc_spend > 0 else 0
-
-            # Horizontal Bar Chart using Plotly for better control
+            # Simplified Chart Logic with specific Hex Codes
             fig = go.Figure()
-            # Total Account Bars
+
+            # Sales Comparison (Teal Colors)
             fig.add_trace(go.Bar(
-                y=['Sales Volume', 'Spend Volume'],
-                x=[acc_sales, acc_spend],
-                name='Total Account',
-                orientation='h',
-                marker_color='#232F3E' # Amazon Navy
+                y=['Sales Volume'], x=[acc_sales], name='Total Sales',
+                orientation='h', marker_color='#B2EBF2', # Light Aqua
+                text=f"Total: ₹{acc_sales:,.0f}", textposition='auto'
             ))
-            # Cannibalized Portion Bars
             fig.add_trace(go.Bar(
-                y=['Sales Volume', 'Spend Volume'],
-                x=[comp_sales, comp_spend],
-                name='Cannibalized Portion',
-                orientation='h',
-                marker_color='#FF9900' # Amazon Orange
+                y=['Sales Volume'], x=[comp_sales], name='Cannibalized Sales',
+                orientation='h', marker_color='#00ACC1', # Solid Aqua/Teal
+                text=f"Competing: ₹{comp_sales:,.0f}", textposition='auto'
+            ))
+
+            # Spend Comparison (Navy Colors)
+            fig.add_trace(go.Bar(
+                y=['Spend Volume'], x=[acc_spend], name='Total Spend',
+                orientation='h', marker_color='#C5CAE9', # Light Navy/Indigo
+                text=f"Total: ₹{acc_spend:,.0f}", textposition='auto'
+            ))
+            fig.add_trace(go.Bar(
+                y=['Spend Volume'], x=[comp_spend], name='Cannibalized Spend',
+                orientation='h', marker_color='#1A237E', # Deep Navy
+                text=f"Competing: ₹{comp_spend:,.0f}", textposition='auto'
             ))
 
             fig.update_layout(
-                barmode='group',
-                height=300,
-                margin=dict(l=20, r=20, t=20, b=20),
+                barmode='overlay', # Overlay makes it look like the portion is "inside" the total
+                height=350,
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(autorange="reversed")
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- INSIGHT METRICS ---
-            m1, m2 = st.columns(2)
-            m1.markdown(f"**Cannibalization Sales Ratio:** `{sales_perc:.1f}%` of your revenue is tied to competing terms.")
-            m2.markdown(f"**Cannibalization Spend Ratio:** `{spend_perc:.1f}%` of your budget is being split across duplicate targets.")
-
-            st.divider()
-
-            # --- IMPACT SECTION ---
+            # Impact Summary
             st.subheader("🚩 Cannibalization Impact")
             c1, c2, c3 = st.columns(3)
             c1.metric("Competing Terms", len(cannibal_list))
-            negate_spend = df_final[df_final['Action'] == '⛔ NEGATE']['Spend'].sum()
-            c2.metric("Spend to Negate (Wasted)", f"₹{negate_spend:,.0f}", delta=f"-{negate_spend:,.0f}", delta_color="inverse")
-            sales_at_risk = df_final[df_final['Action'] == '⛔ NEGATE']['Sales'].sum()
-            c3.metric("Sales being Reallocated", f"₹{sales_at_risk:,.0f}")
+            negate_amt = df_final[df_final['Action'] == '⛔ NEGATE']['Spend'].sum()
+            c2.metric("Spend to Negate", f"₹{negate_amt:,.0f}", delta=f"-{negate_amt:,.0f}", delta_color="inverse")
+            c3.metric("Sales at Stake", f"₹{df_final[df_final['Action'] == '⛔ NEGATE']['Sales'].sum():,.0f}")
 
-            # --- DATA TABLE ---
-            st.dataframe(df_final.style.apply(lambda x: ['background-color: #ffebee' if 'NEGATE' in str(v) else '' for v in x], axis=1), use_container_width=True)
+            st.dataframe(df_final.style.apply(lambda x: ['background-color: #f1f8e9' if 'KEEP' in str(v) else 'background-color: #ffebee' if 'NEGATE' in str(v) else '' for v in x], axis=1), use_container_width=True)
             
-            # --- EXPORT ---
             st.download_button("📥 Export Master Report", data=to_excel(df_final), file_name="Amazon_Cannibalization_Report.xlsx")
         else:
             st.success("No cannibalization detected.")
-
     except Exception as e:
         st.error(f"Error: {e}")
