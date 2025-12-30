@@ -6,11 +6,12 @@ import plotly.graph_objects as go
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Amazon Cannibalization Analyzer", page_icon="⚔️", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM THEME STYLING ---
 st.markdown("""
     <style>
-    .stMetric { background-color: #ffffff; border: 1px solid #f0f2f6; padding: 20px; border-radius: 10px; }
-    h1, h2, h3 { color: #1e3d59; }
+    .stMetric { background-color: #ffffff; border: 1px solid #e0e6ed; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+    h1, h2, h3 { color: #102a43; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .stDataFrame { border-radius: 12px; overflow: hidden; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -41,11 +42,11 @@ def to_excel(df):
 
 # --- HEADER ---
 st.title("⚔️ Amazon Search Term Cannibalization Analyzer")
-st.markdown("Designed by **Prabal Lama**, Senior SEO Specialist, Bangalore.")
+st.markdown("Strategy by **Prabal Lama**, Senior SEO Specialist, Bangalore.")
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Analysis Settings")
+    st.header("⚙️ Settings")
     uploaded_file = st.file_uploader("Upload Search Term Report", type=["csv", "xlsx"])
     st.divider()
     roas_threshold = st.slider("ROAS Improvement Threshold (%)", 30, 200, 100, 10)
@@ -55,7 +56,7 @@ if uploaded_file:
     try:
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         
-        # Column Mapping
+        # Column Mapping Logic
         col_map = {
             'term': next((c for c in df.columns if 'Search Term' in c), None),
             'camp': next((c for c in df.columns if 'Campaign Name' in c), None),
@@ -70,7 +71,6 @@ if uploaded_file:
         for c in ['orders', 'sales', 'spend', 'clicks']:
             df[col_map[c]] = pd.to_numeric(df[col_map[c]], errors='coerce').fillna(0)
         
-        # Total Stats
         acc_sales = df[col_map['sales']].sum()
         acc_spend = df[col_map['spend']].sum()
         
@@ -107,8 +107,8 @@ if uploaded_file:
                     })
             df_final = pd.DataFrame(final_results)
 
-            # --- ACCOUNT OVERVIEW ---
-            st.subheader("📊 Total Account Overview")
+            # --- TOTAL ACCOUNT OVERVIEW ---
+            st.subheader("🏁 Entire Account Performance")
             o1, o2, o3, o4 = st.columns(4)
             o1.metric("Total Sales", f"₹{acc_sales:,.0f}")
             o2.metric("Total Spend", f"₹{acc_spend:,.0f}")
@@ -117,62 +117,63 @@ if uploaded_file:
 
             st.divider()
 
-            # --- COLORED CHART SECTION ---
-            st.subheader("📈 Cannibalization Share vs. Total Account")
+            # --- MODERN GRADIENT-STYLE CHART ---
+            st.subheader("📊 Cannibalization Breakdown")
             
             comp_sales = df_final['Sales'].sum()
             comp_spend = df_final['Spend'].sum()
             
-            # Simplified Chart Logic with specific Hex Codes
+            # Simplified Chart with Gradient Shades
             fig = go.Figure()
 
-            # Sales Comparison (Teal Colors)
+            # Sales Stack (Healthy Aqua vs Competing Aqua)
             fig.add_trace(go.Bar(
-                y=['Sales Volume'], x=[acc_sales], name='Total Sales',
-                orientation='h', marker_color='#B2EBF2', # Light Aqua
-                text=f"Total: ₹{acc_sales:,.0f}", textposition='auto'
+                y=['Sales Volume'], x=[acc_sales - comp_sales], 
+                name='Healthy Sales', orientation='h', 
+                marker=dict(color='#E0F7FA', line=dict(color='#00BCD4', width=1))
             ))
             fig.add_trace(go.Bar(
-                y=['Sales Volume'], x=[comp_sales], name='Cannibalized Sales',
-                orientation='h', marker_color='#00ACC1', # Solid Aqua/Teal
-                text=f"Competing: ₹{comp_sales:,.0f}", textposition='auto'
+                y=['Sales Volume'], x=[comp_sales], 
+                name='Cannibalized Sales', orientation='h', 
+                marker=dict(color='#00BCD4') # Solid Aqua
             ))
 
-            # Spend Comparison (Navy Colors)
+            # Spend Stack (Healthy Navy vs Competing Navy)
             fig.add_trace(go.Bar(
-                y=['Spend Volume'], x=[acc_spend], name='Total Spend',
-                orientation='h', marker_color='#C5CAE9', # Light Navy/Indigo
-                text=f"Total: ₹{acc_spend:,.0f}", textposition='auto'
+                y=['Spend Volume'], x=[acc_spend - comp_spend], 
+                name='Healthy Spend', orientation='h', 
+                marker=dict(color='#E8EAF6', line=dict(color='#1A237E', width=1))
             ))
             fig.add_trace(go.Bar(
-                y=['Spend Volume'], x=[comp_spend], name='Cannibalized Spend',
-                orientation='h', marker_color='#1A237E', # Deep Navy
-                text=f"Competing: ₹{comp_spend:,.0f}", textposition='auto'
+                y=['Spend Volume'], x=[comp_spend], 
+                name='Cannibalized Spend', orientation='h', 
+                marker=dict(color='#1A237E') # Solid Deep Navy
             ))
 
             fig.update_layout(
-                barmode='overlay', # Overlay makes it look like the portion is "inside" the total
-                height=350,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                barmode='stack',
+                height=300,
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5),
+                margin=dict(l=20, r=20, t=50, b=20),
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=True),
                 yaxis=dict(autorange="reversed")
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # Impact Summary
-            st.subheader("🚩 Cannibalization Impact")
+            # --- RESULTS SECTION ---
+            st.subheader("🚩 Micromanagement: Keep vs. Negate")
             c1, c2, c3 = st.columns(3)
             c1.metric("Competing Terms", len(cannibal_list))
             negate_amt = df_final[df_final['Action'] == '⛔ NEGATE']['Spend'].sum()
-            c2.metric("Spend to Negate", f"₹{negate_amt:,.0f}", delta=f"-{negate_amt:,.0f}", delta_color="inverse")
-            c3.metric("Sales at Stake", f"₹{df_final[df_final['Action'] == '⛔ NEGATE']['Sales'].sum():,.0f}")
+            c2.metric("Spend to Negate (Waste)", f"₹{negate_amt:,.0f}", delta=f"-{negate_amt:,.0f}", delta_color="inverse")
+            c3.metric("Sales being Reallocated", f"₹{df_final[df_final['Action'] == '⛔ NEGATE']['Sales'].sum():,.0f}")
 
             st.dataframe(df_final.style.apply(lambda x: ['background-color: #f1f8e9' if 'KEEP' in str(v) else 'background-color: #ffebee' if 'NEGATE' in str(v) else '' for v in x], axis=1), use_container_width=True)
             
-            st.download_button("📥 Export Master Report", data=to_excel(df_final), file_name="Amazon_Cannibalization_Report.xlsx")
+            st.download_button("📥 Download Master Analysis", data=to_excel(df_final), file_name="Amazon_Cannibalization_Report.xlsx")
         else:
-            st.success("No cannibalization detected.")
+            st.success("🎉 No cannibalization detected! Every search term is unique to its ad group.")
     except Exception as e:
         st.error(f"Error: {e}")
